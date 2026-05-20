@@ -14,10 +14,8 @@ jobs:
     - name: 执行作者的原生 LLVM 构建脚本
       shell: bash
       run: |
-        # 1. 创建并进入 build 目录
         mkdir -p build
         
-        # 2. 定义生成 lib 的函数 (原封不动使用原作者的逻辑)
         make_lib(){
           local dll="$1"; shift
           local lib="$1"; shift
@@ -26,10 +24,10 @@ jobs:
             echo "EXPORTS"
             for s in "$@"; do echo "$s"; done
           } > "build/${lib%.lib}.def"
-          lld-link /lib /machine:x64 /def:"build/${lib%.lib}.def" /out:"build/$lib" >/dev/null
+          # 把这里的 /lib /machine /def /out 全部改成减号开头
+          lld-link -lib -machine:x64 "-def:build/${lib%.lib}.def" "-out:build/$lib" >/dev/null
         }
         
-        # 3. 手搓生成所有基础系统库
         make_lib kernel32.dll kernel32.lib GetModuleHandleW GetModuleFileNameW ExitProcess GetEnvironmentVariableW GetCommandLineW CreateDirectoryW CreateFileW ReadFile WriteFile CloseHandle CreateThread Sleep GetLastError lstrlenW lstrcpyW lstrcatW lstrcmpW WideCharToMultiByte MultiByteToWideChar
         make_lib user32.dll user32.lib RegisterClassW CreateWindowExW DestroyWindow ShowWindow UpdateWindow SetWindowPos MoveWindow GetWindowRect GetWindowLongW SetWindowLongW SetLayeredWindowAttributes SetWindowRgn LoadIconW LoadImageW LoadCursorW DefWindowProcW GetMessageW TranslateMessage DispatchMessageW PostQuitMessage PostMessageW InvalidateRect BeginPaint EndPaint GetClientRect SetCapture ReleaseCapture GetCursorPos ScreenToClient CreatePopupMenu AppendMenuW DestroyMenu TrackPopupMenu SetForegroundWindow SetFocus GetWindowTextW SetTimer KillTimer DrawTextA
         make_lib gdi32.dll gdi32.lib CreateSolidBrush SelectObject DeleteObject SetBkMode SetTextColor Rectangle RoundRect MoveToEx LineTo GetStockObject CreateFontA CreatePen GetTextExtentPoint32A CreateRoundRectRgn
@@ -38,15 +36,13 @@ jobs:
         make_lib winhttp.dll winhttp.lib WinHttpOpen WinHttpConnect WinHttpOpenRequest WinHttpSendRequest WinHttpReceiveResponse WinHttpQueryDataAvailable WinHttpReadData WinHttpCloseHandle WinHttpSetTimeouts
         make_lib msvcrt.dll msvcrt.lib sprintf _snprintf strtod strstr strchr strcmp atoi strlen memcpy memset
 
-        # 4. 编译 C++ 源码 (注意：我把原脚本的 -O0 优化改成了 -O3，并且修正了源码路径)
         clang++ --target=x86_64-pc-windows-msvc -std=c++17 -O3 \
           -fno-exceptions -fno-rtti -fno-stack-protector -fno-builtin \
           -c CryptoFloatMonitor.cpp -o build/CryptoFloatMonitor.obj
         
-        # 5. 最终链接生成 EXE 
-        # [注意] 如果你仓库里没有 appicon.res 这个图标文件，请把下面这行的 build/appicon.res 删掉，否则会报错找不到文件
-        lld-link /subsystem:windows /entry:WinMainCRTStartup /nodefaultlib \
-          /out:CryptoFloatMonitor.exe \
+        # 把这里的链接参数也都改成减号开头
+        lld-link -subsystem:windows -entry:WinMainCRTStartup -nodefaultlib \
+          -out:CryptoFloatMonitor.exe \
           build/CryptoFloatMonitor.obj \
           build/kernel32.lib build/user32.lib build/gdi32.lib build/shell32.lib \
           build/advapi32.lib build/winhttp.lib build/msvcrt.lib
