@@ -11,14 +11,15 @@ jobs:
     - name: 检出源代码 (Checkout code)
       uses: actions/checkout@v4
 
-    # 保留此步骤：虽然不用 cl.exe，但需要它来加载 Windows SDK 的路径 (kernel32.lib 等)
-    - name: 配置 Windows SDK 环境 (Setup SDK)
-      uses: ilammy/msvc-dev-cmd@v1
+    - name: 载入系统自带的 MinGW (GCC) 环境
+      shell: pwsh
+      run: echo "C:\msys64\mingw64\bin" >> $env:GITHUB_PATH
 
-    - name: 使用 Clang 编译代码 (Compile with Clang)
+    - name: 使用 GCC 编译无 CRT 原生代码
       shell: cmd
       run: |
-        clang++ -O3 -mwindows CryptoFloatMonitor.cpp -o CryptoFloatMonitor.exe -Wl,/ENTRY:WinMainCRTStartup -Wl,/NODEFAULTLIB -Wl,/SUBSYSTEM:WINDOWS -lkernel32 -luser32 -lgdi32 -lshell32 -ladvapi32 -lwinhttp -lmsvcrt
+        g++ -O3 -mwindows CryptoFloatMonitor.cpp -o CryptoFloatMonitor.exe -Wl,-eWinMainCRTStartup -nostartfiles -lkernel32 -luser32 -lgdi32 -lshell32 -ladvapi32 -lwinhttp -lmsvcrt
+
     - name: 上传生成的 EXE 文件 (Upload Artifact)
       uses: actions/upload-artifact@v4
       with:
