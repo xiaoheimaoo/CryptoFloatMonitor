@@ -11,12 +11,11 @@ jobs:
     - name: 检出源代码 (Checkout code)
       uses: actions/checkout@v4
 
-    - name: 执行作者的原生 LLVM 构建脚本 (包含图标)
+    - name: 执行原生 LLVM 构建脚本 (包含图标)
       shell: bash
       run: |
         mkdir -p build
         
-        # 1. 动态生成系统底层库
         make_lib(){
           local dll="$1"; shift
           local lib="$1"; shift
@@ -36,20 +35,14 @@ jobs:
         make_lib winhttp.dll winhttp.lib WinHttpOpen WinHttpConnect WinHttpOpenRequest WinHttpSendRequest WinHttpReceiveResponse WinHttpQueryDataAvailable WinHttpReadData WinHttpCloseHandle WinHttpSetTimeouts
         make_lib msvcrt.dll msvcrt.lib sprintf _snprintf strtod strstr strchr strcmp atoi strlen memcpy memset
 
-        # 2. 制作图标资源 (这三行是新增的魔术)
-        # 调用自带的 magick 工具将 png 转为 Windows 规范的 ico
         magick logo.png build/appicon.ico
-        # 生成 .rc 资源脚本 (数字 1 对应源码中的 IDI_APPICON)
         echo '1 ICON "build/appicon.ico"' > build/app.rc
-        # 将资源脚本编译为二进制的 .res 文件
         llvm-rc build/app.rc
 
-        # 3. 编译 C++ 源码
         clang++ --target=x86_64-pc-windows-msvc -std=c++17 -O3 \
           -fno-exceptions -fno-rtti -fno-stack-protector -fno-builtin \
           -c CryptoFloatMonitor.cpp -o build/CryptoFloatMonitor.obj
         
-        # 4. 最终链接生成 EXE (加上了刚刚生成的 build/app.res)
         lld-link -subsystem:windows -entry:WinMainCRTStartup -nodefaultlib \
           -out:CryptoFloatMonitor.exe \
           build/CryptoFloatMonitor.obj build/app.res \
