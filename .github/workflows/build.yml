@@ -16,6 +16,7 @@ jobs:
       uses: ilammy/msvc-dev-cmd@v1
 
     - name: 使用 Clang 编译代码 (Compile with Clang)
+      shell: cmd
       run: |
         clang++ -O3 -mwindows CryptoFloatMonitor.cpp -o CryptoFloatMonitor.exe -Wl,/ENTRY:WinMainCRTStartup -Wl,/NODEFAULTLIB -lkernel32 -luser32 -lgdi32 -lshell32 -ladvapi32 -lwinhttp -lmsvcrt
 
