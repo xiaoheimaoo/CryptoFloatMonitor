@@ -1,0 +1,31 @@
+name: Build C++ Win32 App
+
+# 触发条件：推送到 main 或 master 分支，或者在网页端手动触发
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch: 
+
+jobs:
+  build:
+    # 强制使用 GitHub 提供的最新 Windows 运行环境
+    runs-on: windows-latest
+
+    steps:
+    - name: 检出源代码 (Checkout code)
+      uses: actions/checkout@v4
+
+    - name: 配置 MSVC 编译环境 (Setup MSVC)
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: 编译 C++ 代码 (Compile)
+      run: |
+        cl /O2 /Os /GS- /Fe:CryptoFloatMonitor.exe CryptoFloatMonitor.cpp /link /ENTRY:WinMainCRTStartup /NODEFAULTLIB /SUBSYSTEM:WINDOWS kernel32.lib user32.lib gdi32.lib shell32.lib advapi32.lib winhttp.lib msvcrt.lib
+
+    - name: 上传生成的 EXE 文件 (Upload Artifact)
+      uses: actions/upload-artifact@v4
+      with:
+        name: VirtualCoinMonitor-EXE
+        path: VirtualCoinMonitor.exe
