@@ -74,7 +74,7 @@ struct WINHTTP_PROXY_INFO { DWORD dwAccessType; LPWSTR lpszProxy; LPWSTR lpszPro
 #define WS_EX_TOPMOST       0x00000008UL
 #define WS_EX_TOOLWINDOW    0x00000080UL
 #define WS_EX_LAYERED       0x00080000UL
-#define WS_EX_TRANSPARENT  0x00000020UL
+#define WS_EX_TRANSPARENT   0x00000020UL
 #define CS_HREDRAW          0x0002
 #define CS_VREDRAW          0x0001
 #define CW_USEDEFAULT       0x80000000U
@@ -102,7 +102,7 @@ struct WINHTTP_PROXY_INFO { DWORD dwAccessType; LPWSTR lpszProxy; LPWSTR lpszPro
 #define WM_NCHITTEST        0x0084
 #define HTTRANSPARENT       (-1)
 #define WM_LBUTTONDBLCLK    0x0203
-#define WM_DATA_READY        (WM_APP + 8)
+#define WM_DATA_READY       (WM_APP + 8)
 #define MK_LBUTTON          0x0001
 #define DT_CENTER           0x00000001
 #define DT_VCENTER          0x00000004
@@ -157,6 +157,16 @@ struct WINHTTP_PROXY_INFO { DWORD dwAccessType; LPWSTR lpszProxy; LPWSTR lpszPro
 #define WINHTTP_NO_REFERER NULL
 #define WINHTTP_DEFAULT_ACCEPT_TYPES NULL
 #define WINHTTP_FLAG_SECURE 0x00800000
+
+// ==========================================
+// 新增：系统级事件钩子，用来实现完美的事件置顶
+// ==========================================
+#define EVENT_SYSTEM_FOREGROUND 0x0003
+#define WINEVENT_OUTOFCONTEXT 0x0000
+#define SWP_NOACTIVATE 0x0010
+#define SWP_FRAMECHANGED 0x0020
+typedef void* HWINEVENTHOOK;
+typedef void (CALLBACK *WINEVENTPROC)(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD);
 
 extern "C" {
 __declspec(dllimport) HINSTANCE WINAPI GetModuleHandleW(LPCWSTR);
@@ -217,6 +227,9 @@ __declspec(dllimport) UINT WINAPI TrackPopupMenu(HMENU, UINT, int, int, int, HWN
 __declspec(dllimport) BOOL WINAPI SetForegroundWindow(HWND);
 __declspec(dllimport) int WINAPI GetWindowTextW(HWND, LPWSTR, int);
 __declspec(dllimport) HWND WINAPI SetFocus(HWND);
+// 新增的钩子函数导入
+__declspec(dllimport) HWINEVENTHOOK WINAPI SetWinEventHook(DWORD, DWORD, HINSTANCE, WINEVENTPROC, DWORD, DWORD, UINT);
+__declspec(dllimport) BOOL WINAPI UnhookWinEvent(HWINEVENTHOOK);
 
 __declspec(dllimport) HBRUSH WINAPI CreateSolidBrush(COLORREF);
 __declspec(dllimport) HGDIOBJ WINAPI SelectObject(HDC, HGDIOBJ);
@@ -347,6 +360,9 @@ struct AppState {
     volatile LONG pendingChart;
 };
 static AppState g;
+
+// 全局：保存事件钩子的句柄
+static HWINEVENTHOOK g_hForegroundHook = NULL;
 
 static void ZeroMem(void* p, size_t n) { memset(p, 0, n); }
 static double AbsD(double v) { return v < 0 ? -v : v; }
@@ -504,10 +520,16 @@ static void ApplyOpacity() {
 static void ApplyLockedStyle() {
     if (!g.hwnd) return;
     LONG ex = GetWindowLongW(g.hwnd, GWL_EXSTYLE);
-    ex |= WS_EX_LAYERED | WS_EX_TOOLWINDOW;
+    // 强制声明 WS_EX_TOPMOST
+    ex |= WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
+    
     if (g.locked) ex |= WS_EX_TRANSPARENT;
     else ex &= ~WS_EX_TRANSPARENT;
     SetWindowLongW(g.hwnd, GWL_EXSTYLE, ex);
+    
+    // 【关键修复】：调用 SetWindowLongW 后，必须搭配 SWP_FRAMECHANGED 触发重绘并重新断言 TOPMOST
+    // 这解决了“手动解锁锁定后才能前置”的 BUG。
+    SetWindowPos(g.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     ApplyOpacity();
 }
 
@@ -527,7 +549,6 @@ static int JsonGetString(const char* json, const char* key, char* out, int cap) 
 
 static int HttpGet(const wchar_t* host, const wchar_t* path, char* out, int outCap) {
     out[0]=0;
-    // Use Windows system proxy / automatic proxy. No manual --proxy argument is needed.
     HINTERNET hs = WinHttpOpen(L"VirtualCoinMonitor/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if(!hs) {
@@ -661,9 +682,13 @@ static int FetchKlines() {
 
 static void RefreshData(int seedChart);
 
-static LONG AtomicExchange(volatile LONG* p, LONG v) {
-    return __atomic_exchange_n((LONG*)p, v, __ATOMIC_SEQ_CST);
-}
+#ifdef _MSC_VER
+extern "C" long _InterlockedExchange(volatile long* _Target, long _Value);
+#pragma intrinsic(_InterlockedExchange)
+static LONG AtomicExchange(volatile LONG* p, LONG v) { return _InterlockedExchange((volatile long*)p, (long)v); }
+#else
+static LONG AtomicExchange(volatile LONG* p, LONG v) { return __atomic_exchange_n((LONG*)p, v, __ATOMIC_SEQ_CST); }
+#endif
 
 static DWORD WINAPI RefreshWorkerProc(LPVOID) {
     int wantChart = (int)AtomicExchange(&g.pendingChart, 0);
@@ -713,7 +738,6 @@ static void SetAutoStart(int enable) {
 }
 
 static HICON LoadAppIcon(HINSTANCE inst) {
-    // Icon is embedded into the EXE as RT_GROUP_ICON/RT_ICON resource ID 1.
     HICON ico = (HICON)LoadImageW(inst, IDI_APPICON, IMAGE_ICON, 0, 0, LR_DEFAULTSIZE);
     if (!ico) ico = LoadIconW(inst, IDI_APPICON);
     if (!ico) ico = LoadIconW(NULL, IDI_APPLICATION);
@@ -742,7 +766,7 @@ static int PriceDecimals(double v) {
     if (v >= 1.0) return 2;
     if (v >= 0.1) return 4;
     if (v >= 0.01) return 5;
-    if (v >= 0.001) return 7;      // 1000PEPE 等小数价格，避免 0.00
+    if (v >= 0.001) return 7;
     if (v >= 0.0001) return 8;
     if (v >= 0.00001) return 9;
     return 10;
@@ -858,7 +882,6 @@ static void DrawChart(HDC dc, RECT rc) {
     int plotW = MaxI(1, (rc.right - rc.left) - gutter);
     int plotH = MaxI(1, rc.bottom - rc.top);
 
-    // Right price-axis background.
     HBRUSH axisBrush = CreateSolidBrush(bgAxis);
     HGDIOBJ oldBrush = SelectObject(dc, axisBrush);
     HGDIOBJ axisPen = CreatePen(PS_SOLID, 1, bgAxis);
@@ -867,7 +890,6 @@ static void DrawChart(HDC dc, RECT rc) {
     SelectObject(dc, oldPen); DeleteObject(axisPen);
     SelectObject(dc, oldBrush); DeleteObject(axisBrush);
 
-    // Grid + price interval labels are back; latest-price line/tag remains red/green only.
     HGDIOBJ gridPen = CreatePen(PS_SOLID, 1, gridCol);
     oldPen = SelectObject(dc, gridPen);
     int hLines = 5;
@@ -1158,10 +1180,32 @@ static void HandleCommand(UINT id) {
     else if(id == ID_EXIT) { DestroyWindow(g.hwnd); }
 }
 
+// ==========================================
+// 核心逻辑：拦截系统前台窗口切换事件
+// ==========================================
+static void CALLBACK ForegroundEventProc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd, LONG idObject, LONG idChild, DWORD dwEventThread, DWORD dwmsEventTime) {
+    if (event == EVENT_SYSTEM_FOREGROUND) {
+        if (g.hwnd && hwnd != g.hwnd) {
+            // 当其他窗口（比如英雄联盟/网页）成为焦点并可能会盖住我们时
+            // 温柔且不抢焦点地要求 Windows 把我们再次放置到顶层
+            SetWindowPos(g.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+    }
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch(msg) {
     case WM_CREATE:
-        g.hwnd = hwnd; ApplyLockedStyle(); ApplyRoundRegion(hwnd); AddTrayIcon(1); SetTimer(hwnd, TIMER_REFRESH, 5000, NULL); RefreshData(1); return 0;
+        g.hwnd = hwnd; 
+        ApplyLockedStyle(); 
+        ApplyRoundRegion(hwnd); 
+        AddTrayIcon(1); 
+        SetTimer(hwnd, TIMER_REFRESH, 5000, NULL); 
+        RefreshData(1); 
+        
+        // 挂载完美置顶的事件监听钩子
+        g_hForegroundHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, NULL, ForegroundEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
+        return 0;
     case WM_DATA_READY:
         InvalidateRect(hwnd, NULL, false); return 0;
     case WM_TIMER:
@@ -1207,6 +1251,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_CLOSE: DestroyWindow(hwnd); return 0;
     case WM_DESTROY:
+        if (g_hForegroundHook) UnhookWinEvent(g_hForegroundHook); // 清理钩子
         SaveState(); KillTimer(hwnd, TIMER_REFRESH); AddTrayIcon(0); PostQuitMessage(0); ExitProcess(0); return 0;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
