@@ -2,10 +2,6 @@ name: Build C++ Win32 App
 
 # 触发条件：推送到 main 或 master 分支，或者在网页端手动触发
 on:
-  push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
   workflow_dispatch: 
 
 jobs:
