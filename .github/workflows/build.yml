@@ -32,7 +32,7 @@ jobs:
         make_lib gdi32.dll gdi32.lib CreateSolidBrush SelectObject DeleteObject SetBkMode SetTextColor Rectangle RoundRect MoveToEx LineTo GetStockObject CreateFontA CreatePen GetTextExtentPoint32A CreateRoundRectRgn
         make_lib shell32.dll shell32.lib Shell_NotifyIconW
         make_lib advapi32.dll advapi32.lib RegCreateKeyExW RegSetValueExW RegDeleteValueW RegCloseKey
-        make_lib winhttp.dll winhttp.lib WinHttpOpen WinHttpConnect WinHttpOpenRequest WinHttpSendRequest WinHttpReceiveResponse WinHttpQueryDataAvailable WinHttpReadData WinHttpCloseHandle WinHttpSetTimeouts
+        make_lib winhttp.dll winhttp.lib WinHttpOpen WinHttpConnect WinHttpOpenRequest WinHttpSendRequest WinHttpReceiveResponse WinHttpQueryDataAvailable WinHttpReadData WinHttpCloseHandle WinHttpSetTimeouts WinHttpSetOption WinHttpWebSocketCompleteUpgrade WinHttpWebSocketSend WinHttpWebSocketReceive WinHttpWebSocketClose
         make_lib msvcrt.dll msvcrt.lib sprintf _snprintf strtod strstr strchr strcmp atoi strlen memcpy memset
 
         magick logo.png build/appicon.ico
