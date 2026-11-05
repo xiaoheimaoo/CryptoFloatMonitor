@@ -35,7 +35,7 @@ jobs:
               echo "EXPORTS"
               for s in "$@"; do echo "$s"; done
             } > "build/${lib%.lib}.def"
-            lld-link /lib /machine:x64 "/def:build/${lib%.lib}.def" "/out:build/$lib"
+            lld-link -lib -machine:x64 "-def:build/${lib%.lib}.def" "-out:build/$lib"
           }
           make_lib kernel32.dll kernel32.lib GetModuleHandleW GetModuleFileNameW ExitProcess GetEnvironmentVariableW GetCommandLineW CreateDirectoryW CreateFileW ReadFile WriteFile CloseHandle CreateThread Sleep GetLastError lstrlenW lstrcpyW lstrcatW lstrcmpW WideCharToMultiByte MultiByteToWideChar
           make_lib user32.dll user32.lib RegisterClassW CreateWindowExW DestroyWindow ShowWindow UpdateWindow SetWindowPos MoveWindow GetWindowRect GetWindowLongW SetWindowLongW SetLayeredWindowAttributes SetWindowRgn LoadIconW LoadImageW LoadCursorW DefWindowProcW GetMessageW TranslateMessage DispatchMessageW PostQuitMessage PostMessageW InvalidateRect BeginPaint EndPaint GetClientRect SetCapture ReleaseCapture GetCursorPos ScreenToClient CreatePopupMenu AppendMenuW DestroyMenu TrackPopupMenu SetForegroundWindow SetFocus GetWindowTextW SetTimer KillTimer DrawTextA
